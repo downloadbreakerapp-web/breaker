@@ -1,202 +1,175 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import LiveBackground from "@/components/LiveBackground";
 import { supabase } from "@/lib/supabaseClient";
-import { safeGetUser, safeSignOut } from "@/lib/safeAuth";
 
-type MyProfileRow = {
-  id: string;
+type PrelaunchProfile = {
+  user_id: string;
+  card_style: "sports" | "pokemon";
+  display_name: string;
   username: string | null;
-  role: string | null;
-  sales_count: number | null;
-  buy_count: number | null;
-  reputation_rating: number | null;
-  reputation_count: number | null;
+  bio: string | null;
+
+  sport: string | null;
+  team: string | null;
+  position: string | null;
+  rookie_year: number | null;
+  favorite_player: string | null;
+
+  pokemon_favorite: string | null;
+  pokemon_type: string | null;
+  pokemon_trainer: string | null;
+  pokemon_region: string | null;
 };
 
 export default function ProfilePage() {
-  const router = useRouter();
-
-  const [me, setMe] = useState<string | null>(null);
-  const [profile, setProfile] = useState<MyProfileRow | null>(null);
-  const [username, setUsername] = useState("");
-  const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
-
-  // prevents overlapping loads (common on refresh + auth change)
-  const loadingRef = useRef(false);
-
-  const dump = (label: string, e: any) => {
-    if (!e) return;
-    console.error(label, e);
-    console.error(label + " message:", e.message);
-    console.error(label + " details:", e.details);
-    console.error(label + " hint:", e.hint);
-    console.error(label + " code:", e.code);
-  };
-
-  async function load() {
-    if (loadingRef.current) return;
-    loadingRef.current = true;
-    setLoading(true);
-
-    try {
-      const { data: authData, error: authErr } = await safeGetUser();
-      dump("PROFILE getUser", authErr);
-
-      const uid = authData?.user?.id ?? null;
-      setMe(uid);
-
-      if (authErr || !uid) {
-        setProfile(null);
-        setUsername("");
-        return;
-      }
-
-      // ✅ SAFE: read from view (NOT base table)
-      const res = await supabase
-        .from("my_profile")
-        .select(
-          "id, username, role, sales_count, buy_count, reputation_rating, reputation_count"
-        )
-        .maybeSingle();
-
-      dump("PROFILE my_profile", res.error);
-
-      if (res.error) {
-        setProfile(null);
-        setUsername("");
-        return;
-      }
-
-      const p = (res.data ?? null) as MyProfileRow | null;
-      setProfile(p);
-      setUsername(p?.username ?? "");
-    } catch (e: any) {
-      // This is what prevents infinite “Loading…” when something throws.
-      console.error("PROFILE load crashed:", e);
-      setProfile(null);
-      setUsername("");
-    } finally {
-      setLoading(false);
-      loadingRef.current = false;
-    }
-  }
+  const [email, setEmail] = useState<string | null>(null);
+  const [profile, setProfile] = useState<PrelaunchProfile | null>(null);
+  const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    load();
+    let alive = true;
+    (async () => {
+      setErr(null);
+      const { data } = await supabase.auth.getUser();
+      const user = data.user;
+      if (!user) {
+        window.location.href = "/";
+        return;
+      }
+      if (!alive) return;
+      setEmail(user.email ?? null);
 
-    // reload profile automatically on sign-in/sign-out/token refresh
-    const { data: sub } = supabase.auth.onAuthStateChange(() => {
-      setTimeout(load, 50);
-    });
+      const res = await supabase.from("prelaunch_profiles").select("*").eq("user_id", user.id).maybeSingle();
+      if (!alive) return;
 
-    return () => sub?.subscription?.unsubscribe();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+      if (res.error) {
+        setErr(res.error.message);
+      } else {
+        setProfile((res.data as any) ?? null);
+      }
+      setLoading(false);
+    })();
+    return () => {
+      alive = false;
+    };
   }, []);
 
-  async function save() {
-    if (!me) return;
-
-    const u = username.trim();
-    if (u.length < 3) {
-      alert("Username must be at least 3 characters.");
-      return;
-    }
-
-    setSaving(true);
-    try {
-      // ✅ SAFE: update via RPC (NOT direct upsert on base table)
-      const res = await supabase.rpc("update_my_profile", { p_username: u });
-      if (res.error) throw res.error;
-
-      alert("Saved!");
-      await load();
-    } catch (e: any) {
-      alert(e?.message ?? "Failed to save");
-    } finally {
-      setSaving(false);
-    }
+  async function logout() {
+    await supabase.auth.signOut();
+    window.location.href = "/";
   }
 
-  async function signOut() {
-  await safeSignOut();
-  router.push("/login");
-  router.refresh();
-}
-
   return (
-    <div style={{ display: "grid", gap: 14, maxWidth: 800, margin: "0 auto" }}>
-      <div>
-        <div className="h1">Profile</div>
-        <div className="muted2">Your account + trust score.</div>
+    <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 18, position: "relative" }}>
+      <LiveBackground />
+
+      <div style={{ position: "relative", zIndex: 1, width: "min(980px, 100%)", display: "grid", gap: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <img src="/images/breaker-logo.png" alt="Breaker" style={{ width: 46, height: 46, objectFit: "contain" }} />
+            <div style={{ display: "grid" }}>
+              <div style={{ fontWeight: 950, fontSize: 20 }}>My Breaker Card</div>
+              <div style={{ opacity: 0.85, fontWeight: 850 }}>{email ?? ""}</div>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <Link href="/" style={{ textDecoration: "none" }}>
+              <button className="btn">Home</button>
+            </Link>
+            <button className="btn" onClick={logout}>Logout</button>
+          </div>
+        </div>
+
+        <div style={{ border: "1px solid rgba(255,255,255,0.10)", background: "rgba(0,0,0,0.55)", borderRadius: 22, padding: 18, backdropFilter: "blur(12px)" }}>
+          {loading ? (
+            <div style={{ opacity: 0.85, fontWeight: 850 }}>Loading…</div>
+          ) : err ? (
+            <div style={{ border: "1px solid rgba(239,68,68,0.35)", background: "rgba(239,68,68,0.10)", borderRadius: 14, padding: 10, fontWeight: 900 }}>
+              {err}
+            </div>
+          ) : !profile ? (
+            <div style={{ display: "grid", gap: 10 }}>
+              <div style={{ fontWeight: 950, fontSize: 18 }}>No card found yet.</div>
+              <div style={{ opacity: 0.85, fontWeight: 850 }}>Go back and sign up to mint your Breaker card.</div>
+              <Link href="/" style={{ textDecoration: "none" }}>
+                <button className="btn btnPrimary">Go to landing</button>
+              </Link>
+            </div>
+          ) : (
+            <div style={{ display: "grid", gap: 10 }}>
+              <div style={{ fontWeight: 950, fontSize: 18 }}>Breaker is coming soon.</div>
+              <div style={{ opacity: 0.88, fontWeight: 850 }}>
+                Your prelaunch card is saved. When Breaker drops, this becomes your collector identity.
+              </div>
+
+              <div style={{ marginTop: 10, borderTop: "1px solid rgba(255,255,255,0.10)", paddingTop: 12 }}>
+                {profile.card_style === "sports" ? (
+                  <div style={{ display: "grid", gap: 6 }}>
+                    <div style={{ fontWeight: 950, fontSize: 22 }}>{profile.display_name}</div>
+                    <div style={{ opacity: 0.85, fontWeight: 850 }}>{profile.username ? `@${profile.username.replace("@", "")}` : ""}</div>
+                    <div style={{ opacity: 0.9 }}>{profile.bio ?? ""}</div>
+
+                    <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                      <div className="pill">Sport: <b>{profile.sport ?? "—"}</b></div>
+                      <div className="pill">Team: <b>{profile.team ?? "—"}</b></div>
+                      <div className="pill">Position: <b>{profile.position ?? "—"}</b></div>
+                      <div className="pill">Rookie Year: <b>{profile.rookie_year ?? "—"}</b></div>
+                      <div className="pill" style={{ gridColumn: "1 / -1" }}>Favorite Player: <b>{profile.favorite_player ?? "—"}</b></div>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: "grid", gap: 6 }}>
+                    <div style={{ fontWeight: 950, fontSize: 22 }}>{profile.display_name}</div>
+                    <div style={{ opacity: 0.85, fontWeight: 850 }}>{profile.username ? `@${profile.username.replace("@", "")}` : ""}</div>
+                    <div style={{ opacity: 0.9 }}>{profile.bio ?? ""}</div>
+
+                    <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                      <div className="pill">Favorite: <b>{profile.pokemon_favorite ?? "—"}</b></div>
+                      <div className="pill">Type: <b>{profile.pokemon_type ?? "—"}</b></div>
+                      <div className="pill">Trainer: <b>{profile.pokemon_trainer ?? "—"}</b></div>
+                      <div className="pill">Region: <b>{profile.pokemon_region ?? "—"}</b></div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
-      {loading ? (
-        <div className="card">
-          <div className="cardBody">
-            <div className="muted">Loading…</div>
-          </div>
-        </div>
-      ) : !me ? (
-        <div className="card">
-          <div className="cardBody">
-            Please <Link href="/login">sign in</Link>.
-          </div>
-        </div>
-      ) : (
-        <>
-          <div className="card">
-            <div className="cardHeader">
-              <div className="h2">Username</div>
-            </div>
-            <div className="cardBody" style={{ display: "grid", gap: 10 }}>
-              <input
-                className="input"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="Pick a username"
-              />
-              <div style={{ textAlign: "right" }}>
-                <button
-                  className="btn btnPrimary"
-                  type="button"
-                  onClick={save}
-                  disabled={saving}
-                >
-                  {saving ? "Saving..." : "Save"}
-                </button>
-              </div>
-              <div className="muted2">
-                Posting/DMs/listings require verified email + username.
-              </div>
-            </div>
-          </div>
-
-          <div className="card">
-            <div className="cardHeader">
-              <div className="h2">Trust</div>
-            </div>
-            <div className="cardBody" style={{ display: "grid", gap: 8 }}>
-              <div className="pill">Role: {profile?.role ?? "buyer"}</div>
-              <div className="pill">Sales: {profile?.sales_count ?? 0}</div>
-              <div className="pill">Buys: {profile?.buy_count ?? 0}</div>
-              <div className="pill">
-                Rating: {(profile?.reputation_rating ?? 0).toFixed(2)} (
-                {profile?.reputation_count ?? 0})
-              </div>
-            </div>
-          </div>
-
-          <div style={{ textAlign: "right" }}>
-            <button className="btn" type="button" onClick={signOut}>
-              Sign out
-            </button>
-          </div>
-        </>
-      )}
+      <style jsx global>{`
+        .btn {
+          padding: 10px 14px;
+          border-radius: 14px;
+          border: 1px solid rgba(255, 255, 255, 0.10);
+          background: rgba(255, 255, 255, 0.04);
+          color: rgba(226, 232, 240, 0.95);
+          font-weight: 950;
+          cursor: pointer;
+        }
+        .btn:hover {
+          background: rgba(255, 255, 255, 0.07);
+        }
+        .btnPrimary {
+          background: rgba(255, 255, 255, 0.12);
+          border-color: rgba(255, 255, 255, 0.18);
+        }
+        .btnPrimary:hover {
+          background: rgba(255, 255, 255, 0.16);
+        }
+        .pill {
+          padding: 10px 12px;
+          border-radius: 14px;
+          border: 1px solid rgba(255, 255, 255, 0.10);
+          background: rgba(255, 255, 255, 0.03);
+          font-weight: 850;
+        }
+      `}</style>
     </div>
   );
 }
