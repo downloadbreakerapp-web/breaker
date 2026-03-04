@@ -2,8 +2,8 @@
 
 export const dynamic = "force-dynamic";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
 type ProductRow = {
@@ -64,9 +64,9 @@ type MarketCard = {
   score: number;
 
   rawMedian7d: (number | null)[];
-  rawSoldCount7d: number[]; // volume per day (0..)
-  chartMedian7d: number[]; // filled for graph
-  chartSoldCount7d: number[]; // same as raw but guaranteed len 7
+  rawSoldCount7d: number[];
+  chartMedian7d: number[];
+  chartSoldCount7d: number[];
 
   category: "pokemon" | "sports" | "other";
 };
@@ -137,7 +137,7 @@ function last7DaysUTC(): string[] {
 
 function makeChartSeries(raw: (number | null)[], fallback: number | null): number[] {
   const fb = fallback ?? 0;
-  const filled = raw.map((v) => (v == null || !Number.isFinite(v) ? null : Number(v)));
+  const filled = raw.map((v) => (v == null || !Number.isFinite(v as number) ? null : Number(v)));
 
   let last: number | null = null;
   for (let i = 0; i < filled.length; i++) {
@@ -194,9 +194,9 @@ function SparklineWithVolume({
 
   const pointsStr = linePts.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
 
-  const barW = innerW / Math.max(1, values.length) * 0.7;
+  const barW = (innerW / Math.max(1, values.length)) * 0.7;
 
-  const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
+  const onMove = (e: MouseEvent<SVGSVGElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const rel = Math.min(Math.max(x - pad, 0), innerW);
@@ -271,8 +271,7 @@ function SparklineWithVolume({
           }}
         >
           <div style={{ fontWeight: 900 }}>
-            {labelPrefix}
-            ${fmtMoney(hover.v)}
+            {labelPrefix}${fmtMoney(hover.v)}
           </div>
           <div style={{ opacity: 0.9, marginTop: 3 }}>Sold: {volume[hover.i] ?? 0}</div>
         </div>
@@ -335,7 +334,11 @@ export default function MarketPage() {
 
     try {
       const [pRes, sRes, aRes, dRes, nRes] = await Promise.all([
-        supabase.from("market_products").select("id, type, name, brand, set_name, image_url, created_at").order("created_at", { ascending: false }),
+        supabase
+          .from("market_products")
+          .select("id, type, name, brand, set_name, image_url, created_at")
+          .order("created_at", { ascending: false })
+          .returns<ProductRow[]>(),
 
         supabase
           .from("market_breaker_sales_7d")
@@ -352,13 +355,26 @@ export default function MarketPage() {
               "sold_7d_change_abs",
               "sold_7d_change_pct",
             ].join(",")
-          ),
+          )
+          .returns<BreakerSalesRow[]>(),
 
-        supabase.from("market_active_listings_by_product").select("product_id, active_count, active_low, active_median, last_listed_at"),
+        supabase
+          .from("market_active_listings_by_product")
+          .select("product_id, active_count, active_low, active_median, last_listed_at")
+          .returns<ActiveListingsRow[]>(),
 
-        supabase.from("market_breaker_daily_median_7d").select("product_id, day, median_price, sold_count").order("day", { ascending: true }),
+        supabase
+          .from("market_breaker_daily_median_7d")
+          .select("product_id, day, median_price, sold_count")
+          .order("day", { ascending: true })
+          .returns<DailyMedianRow[]>(),
 
-        supabase.from("market_news").select("id, category, title, body, url, release_date, created_at").order("created_at", { ascending: false }).limit(40),
+        supabase
+          .from("market_news")
+          .select("id, category, title, body, url, release_date, created_at")
+          .order("created_at", { ascending: false })
+          .limit(40)
+          .returns<NewsRow[]>(),
       ]);
 
       if (pRes.error) throw pRes.error;
@@ -367,11 +383,11 @@ export default function MarketPage() {
       if (dRes.error) throw dRes.error;
       if (nRes.error) throw nRes.error;
 
-      setProducts((pRes.data ?? []) as ProductRow[]);
-      setSales7d((sRes.data ?? []) as BreakerSalesRow[]);
-      setActiveByProduct((aRes.data ?? []) as ActiveListingsRow[]);
-      setDaily7d((dRes.data ?? []) as DailyMedianRow[]);
-      setNews((nRes.data ?? []) as NewsRow[]);
+      setProducts(pRes.data ?? []);
+      setSales7d(sRes.data ?? []);
+      setActiveByProduct(aRes.data ?? []);
+      setDaily7d(dRes.data ?? []);
+      setNews(nRes.data ?? []);
     } catch (e: any) {
       console.error("MARKET LOAD ERROR:", e);
       setErr(e?.message ?? "Market failed to load.");
@@ -408,7 +424,10 @@ export default function MarketPage() {
   }, [live, loadMarket]);
 
   useEffect(() => {
-    const ch = supabase.channel("market-page-live").on("postgres_changes", { event: "*", schema: "public", table: "market_news" }, scheduleSilentRefresh).subscribe();
+    const ch = supabase
+      .channel("market-page-live")
+      .on("postgres_changes", { event: "*", schema: "public", table: "market_news" }, scheduleSilentRefresh)
+      .subscribe();
     return () => {
       if (debounceTimerRef.current) window.clearTimeout(debounceTimerRef.current);
       supabase.removeChannel(ch);
@@ -492,8 +511,16 @@ export default function MarketPage() {
         const diff = b.score - a.score;
         if (diff !== 0) return diff;
 
-        const bt = b.sales?.last_sold_at ? new Date(b.sales.last_sold_at).getTime() : b.active?.last_listed_at ? new Date(b.active.last_listed_at).getTime() : 0;
-        const at = a.sales?.last_sold_at ? new Date(a.sales.last_sold_at).getTime() : a.active?.last_listed_at ? new Date(a.active.last_listed_at).getTime() : 0;
+        const bt = b.sales?.last_sold_at
+          ? new Date(b.sales.last_sold_at).getTime()
+          : b.active?.last_listed_at
+          ? new Date(b.active.last_listed_at).getTime()
+          : 0;
+        const at = a.sales?.last_sold_at
+          ? new Date(a.sales.last_sold_at).getTime()
+          : a.active?.last_listed_at
+          ? new Date(a.active.last_listed_at).getTime()
+          : 0;
         return bt - at;
       })
       .slice(0, 6);
