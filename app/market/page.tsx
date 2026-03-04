@@ -2,8 +2,9 @@
 
 export const dynamic = "force-dynamic";
 
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { MouseEvent } from "react";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
 type ProductRow = {
@@ -122,7 +123,9 @@ function inferCategory(p: ProductRow): "pokemon" | "sports" | "other" {
 }
 
 function isoDayUTC(d: Date) {
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())).toISOString().slice(0, 10);
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()))
+    .toISOString()
+    .slice(0, 10);
 }
 function last7DaysUTC(): string[] {
   const base = new Date();
@@ -137,7 +140,7 @@ function last7DaysUTC(): string[] {
 
 function makeChartSeries(raw: (number | null)[], fallback: number | null): number[] {
   const fb = fallback ?? 0;
-  const filled = raw.map((v) => (v == null || !Number.isFinite(v as number) ? null : Number(v)));
+  const filled = raw.map((v) => (v == null || !Number.isFinite(v) ? null : Number(v)));
 
   let last: number | null = null;
   for (let i = 0; i < filled.length; i++) {
@@ -151,7 +154,9 @@ function makeChartSeries(raw: (number | null)[], fallback: number | null): numbe
   }
 
   const allNull = filled.every((v) => v == null);
-  const finalArr = (allNull ? Array(filled.length).fill(fb) : filled.map((v) => (v == null ? fb : v))) as number[];
+  const finalArr = (allNull
+    ? Array(filled.length).fill(fb)
+    : filled.map((v) => (v == null ? fb : v))) as number[];
 
   if (finalArr.length === 1) return [finalArr[0], finalArr[0]];
   return finalArr;
@@ -242,12 +247,26 @@ function SparklineWithVolume({
         })}
 
         {/* line */}
-        <polyline fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" points={pointsStr} />
+        <polyline
+          fill="none"
+          stroke={color}
+          strokeWidth="2"
+          strokeLinejoin="round"
+          strokeLinecap="round"
+          points={pointsStr}
+        />
 
         {/* hover marker */}
         {hover ? (
           <>
-            <line x1={hover.x} y1={pad} x2={hover.x} y2={pad + innerH} stroke="rgba(255,255,255,0.20)" strokeWidth="1" />
+            <line
+              x1={hover.x}
+              y1={pad}
+              x2={hover.x}
+              y2={pad + innerH}
+              stroke="rgba(255,255,255,0.20)"
+              strokeWidth="1"
+            />
             <circle cx={hover.x} cy={hover.y} r={3} fill={color} />
           </>
         ) : null}
@@ -337,8 +356,7 @@ export default function MarketPage() {
         supabase
           .from("market_products")
           .select("id, type, name, brand, set_name, image_url, created_at")
-          .order("created_at", { ascending: false })
-          .returns<ProductRow[]>(),
+          .order("created_at", { ascending: false }),
 
         supabase
           .from("market_breaker_sales_7d")
@@ -355,26 +373,22 @@ export default function MarketPage() {
               "sold_7d_change_abs",
               "sold_7d_change_pct",
             ].join(",")
-          )
-          .returns<BreakerSalesRow[]>(),
+          ),
 
         supabase
           .from("market_active_listings_by_product")
-          .select("product_id, active_count, active_low, active_median, last_listed_at")
-          .returns<ActiveListingsRow[]>(),
+          .select("product_id, active_count, active_low, active_median, last_listed_at"),
 
         supabase
           .from("market_breaker_daily_median_7d")
           .select("product_id, day, median_price, sold_count")
-          .order("day", { ascending: true })
-          .returns<DailyMedianRow[]>(),
+          .order("day", { ascending: true }),
 
         supabase
           .from("market_news")
           .select("id, category, title, body, url, release_date, created_at")
           .order("created_at", { ascending: false })
-          .limit(40)
-          .returns<NewsRow[]>(),
+          .limit(40),
       ]);
 
       if (pRes.error) throw pRes.error;
@@ -383,11 +397,11 @@ export default function MarketPage() {
       if (dRes.error) throw dRes.error;
       if (nRes.error) throw nRes.error;
 
-      setProducts(pRes.data ?? []);
-      setSales7d(sRes.data ?? []);
-      setActiveByProduct(aRes.data ?? []);
-      setDaily7d(dRes.data ?? []);
-      setNews(nRes.data ?? []);
+      setProducts((pRes.data ?? []) as ProductRow[]);
+      setSales7d((sRes.data ?? []) as unknown as BreakerSalesRow[]);
+      setActiveByProduct((aRes.data ?? []) as ActiveListingsRow[]);
+      setDaily7d((dRes.data ?? []) as DailyMedianRow[]);
+      setNews((nRes.data ?? []) as NewsRow[]);
     } catch (e: any) {
       console.error("MARKET LOAD ERROR:", e);
       setErr(e?.message ?? "Market failed to load.");
@@ -516,11 +530,13 @@ export default function MarketPage() {
           : b.active?.last_listed_at
           ? new Date(b.active.last_listed_at).getTime()
           : 0;
+
         const at = a.sales?.last_sold_at
           ? new Date(a.sales.last_sold_at).getTime()
           : a.active?.last_listed_at
           ? new Date(a.active.last_listed_at).getTime()
           : 0;
+
         return bt - at;
       })
       .slice(0, 6);
@@ -669,13 +685,7 @@ export default function MarketPage() {
                   </div>
 
                   <div style={{ marginTop: 10 }}>
-                    <SparklineWithVolume
-                      values={overview.top.chartMedian7d}
-                      volume={overview.top.chartSoldCount7d}
-                      width={220}
-                      height={56}
-                      color={changeColor(overview.top.sales?.sold_7d_change_pct)}
-                    />
+                    <SparklineWithVolume values={overview.top.chartMedian7d} volume={overview.top.chartSoldCount7d} width={220} height={56} color={changeColor(overview.top.sales?.sold_7d_change_pct)} />
                   </div>
                 </div>
               </Link>
@@ -720,8 +730,7 @@ export default function MarketPage() {
                       <div>
                         <div style={{ fontWeight: 850 }}>{c.product.name}</div>
                         <div className="muted2" style={{ marginTop: 4 }}>
-                          <span className="pill">{pillForType(c.product.type)}</span> {c.product.brand ? `• ${c.product.brand}` : ""}{" "}
-                          {c.product.set_name ? `• ${c.product.set_name}` : ""}
+                          <span className="pill">{pillForType(c.product.type)}</span> {c.product.brand ? `• ${c.product.brand}` : ""} {c.product.set_name ? `• ${c.product.set_name}` : ""}
                         </div>
 
                         <div className="muted2" style={{ marginTop: 6 }}>
@@ -842,8 +851,7 @@ export default function MarketPage() {
                 <div>
                   <div style={{ fontWeight: 950 }}>{selectedCard.product.name}</div>
                   <div className="muted2" style={{ marginTop: 4 }}>
-                    <span className="pill">{pillForType(selectedCard.product.type)}</span> {selectedCard.product.brand ? `• ${selectedCard.product.brand}` : ""}{" "}
-                    {selectedCard.product.set_name ? `• ${selectedCard.product.set_name}` : ""}
+                    <span className="pill">{pillForType(selectedCard.product.type)}</span> {selectedCard.product.brand ? `• ${selectedCard.product.brand}` : ""} {selectedCard.product.set_name ? `• ${selectedCard.product.set_name}` : ""}
                   </div>
                 </div>
 
@@ -869,8 +877,7 @@ export default function MarketPage() {
                   Median sold (7d): <b>{selectedCard.sales?.sold_7d_median == null ? "—" : `$${fmtMoney(Number(selectedCard.sales.sold_7d_median))}`}</b> · Median listed:{" "}
                   <b>{selectedCard.active?.active_median == null ? "—" : `$${fmtMoney(Number(selectedCard.active.active_median))}`}</b> · Low/High sold:{" "}
                   <b>
-                    {selectedCard.sales?.sold_7d_low == null ? "—" : `$${fmtMoney(Number(selectedCard.sales.sold_7d_low))}`} /{" "}
-                    {selectedCard.sales?.sold_7d_high == null ? "—" : `$${fmtMoney(Number(selectedCard.sales.sold_7d_high))}`}
+                    {selectedCard.sales?.sold_7d_low == null ? "—" : `$${fmtMoney(Number(selectedCard.sales.sold_7d_low))}`} / {selectedCard.sales?.sold_7d_high == null ? "—" : `$${fmtMoney(Number(selectedCard.sales.sold_7d_high))}`}
                   </b>
                 </div>
               </div>
@@ -902,8 +909,7 @@ export default function MarketPage() {
                     <div>
                       <div style={{ fontWeight: 900 }}>{c.product.name}</div>
                       <div className="muted2" style={{ marginTop: 6 }}>
-                        <span className="pill">{pillForType(c.product.type)}</span> {c.product.brand ? `• ${c.product.brand}` : ""}{" "}
-                        {c.product.set_name ? `• ${c.product.set_name}` : ""}
+                        <span className="pill">{pillForType(c.product.type)}</span> {c.product.brand ? `• ${c.product.brand}` : ""} {c.product.set_name ? `• ${c.product.set_name}` : ""}
                       </div>
                     </div>
 
